@@ -1,0 +1,27 @@
+name: ArtworkDocumenter
+options:
+  bundleIdPrefix: com.mcad
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: NO
+
+targets:
+  ArtworkDocumenter:
+    type: application
+    platform: macOS
+    sources:
+      - ArtworkDocumenter
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mcad.ArtworkDocumenter
+        CODE_SIGN_ENTITLEMENTS: ArtworkDocumenter/Resources/ArtworkDocumenter.entitlements
+        INFOPLIST_FILE: ArtworkDocumenter/Resources/Info.plist
+        ENABLE_APP_SANDBOX: NO
