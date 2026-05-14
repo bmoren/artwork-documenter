@@ -14,7 +14,8 @@ final class VideoMergeManager {
 
     var isMerging: Bool = false
 
-    func merge(mainURL: URL, clipURL: URL, position: InsertPosition) async throws {
+    func merge(mainURL: URL, clipURL: URL, position: InsertPosition,
+               settings: ExportSettings) async throws {
         isMerging = true
         defer { isMerging = false }
 
@@ -54,23 +55,20 @@ final class VideoMergeManager {
             )
         }
 
-        // Match the output container to the main file so the merged file keeps
-        // the same format (MOV during capture, MP4 after transcode).
-        let ext      = mainURL.pathExtension.lowercased()
-        let fileType: AVFileType = ext == "mp4" ? .mp4 : .mov
+        let ext = mainURL.pathExtension.lowercased()
         let mergedURL = mainURL.deletingLastPathComponent()
             .appendingPathComponent("screen_recording_merged.\(ext)")
 
         guard let session = AVAssetExportSession(
             asset: composition,
-            presetName: AVAssetExportPresetHighestQuality
+            presetName: settings.exportPreset
         ) else { throw MergeError.exportSessionFailed }
 
         if FileManager.default.fileExists(atPath: mergedURL.path) {
             try FileManager.default.removeItem(at: mergedURL)
         }
 
-        try await session.export(to: mergedURL, as: fileType)
+        try await session.export(to: mergedURL, as: settings.avFileType)
 
         try FileManager.default.removeItem(at: mainURL)
         try FileManager.default.moveItem(at: mergedURL, to: mainURL)

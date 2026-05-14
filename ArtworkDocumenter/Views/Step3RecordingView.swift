@@ -221,7 +221,7 @@ struct Step3RecordingView: View {
             Spacer()
             ProgressView().scaleEffect(1.5)
             VStack(spacing: 6) {
-                Text("Compressing to \(settings.videoContainer.rawValue)…")
+                Text("Compressing to MP4…")
                     .font(.headline)
                 Text("Converting to \(settings.videoResolution.rawValue) \(settings.videoCodec.rawValue). This may take a moment.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -382,13 +382,8 @@ struct Step3RecordingView: View {
         capture.onRecordingFinished = {
             state.isRecording = false
             timer?.invalidate()
-            if settings.videoContainer == .mp4 {
-                isTranscoding = true
-                Task { await transcodeToFinalFormat() }
-            } else {
-                state.recordingURL = capture.recordedFileURL ?? state.recordingURL
-                state.recordingFinished = true
-            }
+            isTranscoding = true
+            Task { await transcodeToFinalFormat() }
         }
         capture.onError = { msg in
             errorMessage = msg
@@ -470,7 +465,7 @@ struct Step3RecordingView: View {
         }
 
         do {
-            try await merger.merge(mainURL: recording, clipURL: clip, position: position)
+            try await merger.merge(mainURL: recording, clipURL: clip, position: position, settings: settings)
             mergeSuccess = true
             recordingPlayer = AVPlayer(url: recording)
         } catch {

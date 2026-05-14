@@ -63,16 +63,10 @@ final class ScreenCaptureManager: NSObject {
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
 
-    func saveScreenshot(_ image: CGImage, to url: URL, settings: ExportSettings) throws {
-        let props: CFDictionary?
-        if settings.imageFormat == .jpeg {
-            props = [kCGImageDestinationLossyCompressionQuality: settings.jpegQuality.value] as CFDictionary
-        } else {
-            props = nil
-        }
-        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, settings.imageFormat.utType, 1, nil)
+    func saveScreenshot(_ image: CGImage, to url: URL) throws {
+        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
         else { throw CaptureError.saveFailed }
-        CGImageDestinationAddImage(dest, image, props)
+        CGImageDestinationAddImage(dest, image, nil)
         guard CGImageDestinationFinalize(dest) else { throw CaptureError.saveFailed }
     }
 

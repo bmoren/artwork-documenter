@@ -2,8 +2,7 @@ import SwiftUI
 import ScreenCaptureKit
 
 struct Step2ScreenshotsView: View {
-    @Environment(ProjectState.self)   private var state
-    @Environment(ExportSettings.self) private var settings
+    @Environment(ProjectState.self) private var state
     @State private var capture = ScreenCaptureManager()
 
     @State private var captureMode: CaptureSource = .display
@@ -165,10 +164,9 @@ struct Step2ScreenshotsView: View {
             let window  = captureMode == .window  ? capture.availableWindows[safe: selectedWindowIndex]  : nil
             let image = try await capture.captureScreenshot(display: display, window: window)
             let index    = state.screenshots.count + 1
-            let ext      = settings.imageFormat.fileExtension
-            let filename = String(format: "screenshot_%02d.\(ext)", index)
+            let filename = String(format: "screenshot_%02d.png", index)
             let url      = state.outputDir!.appendingPathComponent(filename)
-            try capture.saveScreenshot(image, to: url, settings: settings)
+            try capture.saveScreenshot(image, to: url)
             state.screenshots.append(url)
         } catch {
             errorMessage = error.localizedDescription

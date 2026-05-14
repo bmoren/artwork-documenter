@@ -63,8 +63,6 @@ struct Step1DescriptionView: View {
             DisclosureGroup(isExpanded: $showExportSettings) {
                 VStack(alignment: .leading, spacing: 20) {
                     exportVideoSection(settings: $settings)
-                    Divider()
-                    exportImageSection(settings: $settings)
                 }
                 .padding(.top, 12)
             } label: {
@@ -104,8 +102,7 @@ struct Step1DescriptionView: View {
         HStack(spacing: 6) {
             chip(settings.videoResolution.rawValue)
             chip(settings.videoCodec.rawValue)
-            chip(settings.videoContainer.rawValue)
-            chip(settings.imageFormat.rawValue)
+            chip(settings.videoFrameRate.rawValue)
         }
     }
 
@@ -141,14 +138,6 @@ struct Step1DescriptionView: View {
                 }
                 .pickerStyle(.segmented).labelsHidden()
             }
-            settingsRow(label: "Container") {
-                Picker("Container", selection: settings.videoContainer) {
-                    ForEach(ExportSettings.VideoContainer.allCases, id: \.self) {
-                        Text($0.rawValue).tag($0)
-                    }
-                }
-                .pickerStyle(.segmented).labelsHidden()
-            }
             settingsRow(label: "Frame Rate") {
                 Picker("Frame Rate", selection: settings.videoFrameRate) {
                     ForEach(ExportSettings.FrameRate.allCases, id: \.self) {
@@ -161,39 +150,6 @@ struct Step1DescriptionView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "info.circle").foregroundStyle(.secondary)
                     Text("H.265 produces smaller files at equivalent quality. Requires macOS 10.13+ to play back.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    // MARK: - Image export section
-
-    @ViewBuilder
-    private func exportImageSection(settings: Bindable<ExportSettings>) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("Screenshots", systemImage: "photo").font(.subheadline.bold())
-
-            settingsRow(label: "Format") {
-                Picker("Format", selection: settings.imageFormat) {
-                    ForEach(ExportSettings.ImageFormat.allCases, id: \.self) {
-                        Text($0.rawValue).tag($0)
-                    }
-                }
-                .pickerStyle(.segmented).labelsHidden()
-            }
-            if settings.imageFormat.wrappedValue == .jpeg {
-                settingsRow(label: "Quality") {
-                    Picker("Quality", selection: settings.jpegQuality) {
-                        ForEach(ExportSettings.JPEGQuality.allCases, id: \.self) {
-                            Text($0.rawValue).tag($0)
-                        }
-                    }
-                    .pickerStyle(.segmented).labelsHidden()
-                }
-                HStack(spacing: 6) {
-                    Image(systemName: "info.circle").foregroundStyle(.secondary)
-                    Text("JPEG produces smaller files but uses lossy compression. PNG is lossless and recommended for archival.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
