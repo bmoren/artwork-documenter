@@ -15,20 +15,19 @@ struct Step3RecordingView: View {
 
     @State private var timer: Timer? = nil
     @State private var errorMessage: String? = nil
+    @State private var isTranscoding = false
 
-    // Clip insertion
     @State private var clipURL: URL? = nil
     @State private var clipPosition: ClipPosition = .end
     @State private var mergeSuccess = false
 
-    // Video player for the recording (shown after recording finishes)
     @State private var recordingPlayer: AVPlayer? = nil
 
     enum CaptureSource { case display, window }
     enum ClipPosition: String, CaseIterable {
-        case start     = "Beginning"
-        case end       = "End"
-        case current   = "Current Position"
+        case start   = "Beginning"
+        case end     = "End"
+        case current = "Current Position"
     }
 
     private var elapsedFormatted: String {
@@ -39,41 +38,55 @@ struct Step3RecordingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Screen Recording")
-                            .font(.title2.bold())
-                        Text("Record 1–3 minutes of your artwork. System audio is captured automatically.")
-                            .foregroundStyle(.secondary)
-                    }
 
-                    if state.recordingFinished {
-                        doneSection
-                    } else if state.isRecording {
-                        activeRecordingSection
-                    } else {
-                        setupSection
-                    }
-
-                    if let msg = errorMessage {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
-                            Text(msg).font(.caption).foregroundStyle(.red)
-                        }
-                        .padding(12)
-                        .background(Color.red.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
+            // Header — hidden on done screen to reclaim space for the player
+            if !state.recordingFinished {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Screen Recording")
+                        .font(.title2.bold())
+                    Text("Record 1–3 minutes of your artwork. System audio is captured automatically.")
+                        .foregroundStyle(.secondary)
                 }
-                .padding(36)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 28)
+                .padding(.horizontal, 32)
+                .padding(.bottom, 18)
+                Divider()
+            }
+
+            // State-specific content fills all remaining space
+            Group {
+                if state.recordingFinished {
+                    doneSection
+                } else if isTranscoding {
+                    transcodingSection
+                } else if state.isRecording {
+                    activeRecordingSection
+                } else {
+                    setupSection
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(state.recordingFinished ? 20 : 32)
+
+            if let msg = errorMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
+                    Text(msg).font(.caption).foregroundStyle(.red)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.red.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(.horizontal, state.recordingFinished ? 20 : 32)
+                .padding(.bottom, 8)
             }
 
             Divider()
             HStack {
                 Button("Back") { state.currentStep = 2 }
                     .buttonStyle(.bordered)
-                    .disabled(state.isRecording)
+                    .disabled(state.isRecording || isTranscoding)
                 Spacer()
             }
             .padding(32)
@@ -90,62 +103,66 @@ struct Step3RecordingView: View {
     // MARK: - Setup
 
     private var setupSection: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 16) {
-                Picker("Source", selection: $captureMode) {
-                    Text("Full Display").tag(CaptureSource.display)
-                    Text("Specific Window").tag(CaptureSource.window)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-
-                if captureMode == .display, capture.availableDisplays.count > 1 {
-                    Picker("Display", selection: $selectedDisplayIndex) {
-                        ForEach(capture.availableDisplays.indices, id: \.self) { i in
-                            Text("Display \(i + 1)").tag(i)
-                        }
+        VStack {
+            Spacer()
+            GroupBox {
+                VStack(alignment: .leading, spacing: 16) {
+                    Picker("Source", selection: $captureMode) {
+                        Text("Full Display").tag(CaptureSource.display)
+                        Text("Specific Window").tag(CaptureSource.window)
                     }
-                }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
 
-                if captureMode == .window {
-                    if capture.availableWindows.isEmpty {
-                        Text("No windows found. Open the app you want to record first.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Picker("Window", selection: $selectedWindowIndex) {
-                            ForEach(capture.availableWindows.indices, id: \.self) { i in
-                                let w = capture.availableWindows[i]
-                                Text("\(w.owningApplication?.applicationName ?? "App")  —  \(w.title ?? "Window")")
-                                    .tag(i)
+                    if captureMode == .display, capture.availableDisplays.count > 1 {
+                        Picker("Display", selection: $selectedDisplayIndex) {
+                            ForEach(capture.availableDisplays.indices, id: \.self) { i in
+                                Text("Display \(i + 1)").tag(i)
                             }
                         }
                     }
-                }
 
-                Button {
-                    Task { await startRecording() }
-                } label: {
-                    Label("Start Recording", systemImage: "record.circle.fill")
-                        .frame(maxWidth: .infinity).padding(.vertical, 4)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .controlSize(.large)
-                .disabled(!capture.permissionGranted)
-
-                if capture.permissionDenied {
-                    HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: "exclamationmark.shield").foregroundStyle(.orange)
-                        Text("Screen Recording was denied. Enable ArtworkDocumenter in System Settings → Privacy & Security → Screen Recording, then relaunch.")
-                            .font(.caption).foregroundStyle(.orange)
+                    if captureMode == .window {
+                        if capture.availableWindows.isEmpty {
+                            Text("No windows found. Open the app you want to record first.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Picker("Window", selection: $selectedWindowIndex) {
+                                ForEach(capture.availableWindows.indices, id: \.self) { i in
+                                    let w = capture.availableWindows[i]
+                                    Text("\(w.owningApplication?.applicationName ?? "App")  —  \(w.title ?? "Window")")
+                                        .tag(i)
+                                }
+                            }
+                        }
                     }
-                    .padding(10)
-                    .background(Color.orange.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    Button {
+                        Task { await startRecording() }
+                    } label: {
+                        Label("Start Recording", systemImage: "record.circle.fill")
+                            .frame(maxWidth: .infinity).padding(.vertical, 4)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .controlSize(.large)
+                    .disabled(!capture.permissionGranted)
+
+                    if capture.permissionDenied {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.shield").foregroundStyle(.orange)
+                            Text("Screen Recording was denied. Enable ArtworkDocumenter in System Settings → Privacy & Security → Screen Recording, then relaunch.")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                        .padding(10)
+                        .background(Color.orange.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
                 }
+            } label: {
+                Label("Recording Source", systemImage: "display").font(.headline)
             }
-        } label: {
-            Label("Recording Source", systemImage: "display").font(.headline)
+            Spacer()
         }
     }
 
@@ -153,6 +170,8 @@ struct Step3RecordingView: View {
 
     private var activeRecordingSection: some View {
         VStack(spacing: 20) {
+            Spacer()
+
             VStack(spacing: 10) {
                 HStack(spacing: 8) {
                     Circle()
@@ -167,8 +186,10 @@ struct Step3RecordingView: View {
                     .font(.system(size: 80, weight: .ultraLight, design: .monospaced))
                     .monospacedDigit()
                 if state.elapsedSeconds < 60 {
-                    Text("Tip: aim for at least 1 minute")
+                    Text("Record your project's interactions slowly and deliberately — show the details. You know this work deeply and may move through it fast, but we want to capture its essence for history!")
                         .font(.caption).foregroundStyle(.orange)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 420)
                 } else {
                     Text("\(180 - state.elapsedSeconds)s remaining")
                         .font(.caption).foregroundStyle(.secondary)
@@ -178,6 +199,8 @@ struct Step3RecordingView: View {
             .padding(32)
             .background(Color.red.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 14))
+
+            Spacer()
 
             Button {
                 Task { await stopRecording() }
@@ -191,57 +214,80 @@ struct Step3RecordingView: View {
         }
     }
 
+    // MARK: - Transcoding
+
+    private var transcodingSection: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            ProgressView().scaleEffect(1.5)
+            VStack(spacing: 6) {
+                Text("Compressing to \(settings.videoContainer.rawValue)…")
+                    .font(.headline)
+                Text("Converting to \(settings.videoResolution.rawValue) \(settings.videoCodec.rawValue). This may take a moment.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     // MARK: - Done
 
     private var doneSection: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 14) {
 
-            // Success banner
+            // Success badge
             HStack(spacing: 12) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green).font(.title)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Recording saved!")
                         .font(.headline)
-                    Text("Duration: \(elapsedFormatted)")
-                        .font(.caption).foregroundStyle(.secondary)
+                    if let url = state.recordingURL {
+                        Text("\(url.lastPathComponent)  ·  Duration: \(elapsedFormatted)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
-            .padding(16)
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.green.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
-            // Clip insertion with video preview
+            // Clip insertion grows to fill the remaining space
             clipInsertionSection
+                .frame(maxHeight: .infinity)
 
+            // Action row
             Divider()
-
-            // Output folder + finish
-            VStack(alignment: .leading, spacing: 12) {
-                if let dir = state.outputDir {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Output folder:").font(.caption.bold())
-                        Text(dir.path)
-                            .font(.caption).foregroundStyle(.secondary)
-                            .textSelection(.enabled)
+            HStack(spacing: 12) {
+                Button("Reveal in Finder") {
+                    if let dir = state.outputDir {
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: dir.path)
                     }
                 }
-                HStack(spacing: 12) {
-                    Button("Reveal in Finder") {
-                        if let dir = state.outputDir {
-                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: dir.path)
-                        }
-                    }
-                    .buttonStyle(.bordered)
+                .buttonStyle(.bordered)
 
-                    Button("Document Another Project") {
-                        timer?.invalidate()
-                        recordingPlayer?.pause()
-                        recordingPlayer = nil
-                        state.reset()
-                    }
-                    .buttonStyle(.borderedProminent)
+                Button("Document Another Project") {
+                    timer?.invalidate()
+                    recordingPlayer?.pause()
+                    recordingPlayer = nil
+                    state.reset()
+                }
+                .buttonStyle(.borderedProminent)
+
+                Spacer()
+
+                if let dir = state.outputDir {
+                    Text(dir.path)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: 280)
                 }
             }
         }
@@ -251,23 +297,21 @@ struct Step3RecordingView: View {
 
     private var clipInsertionSection: some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text("You can insert an existing video clip into your recording.")
                     .font(.caption).foregroundStyle(.secondary)
 
-                // Video player for the recording — scrub to find insertion point
                 if let player = recordingPlayer {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Your Recording")
                             .font(.caption.bold())
                         VideoPlayerView(player: player)
-                            .frame(height: 260)
+                            .frame(minHeight: 140, maxHeight: .infinity)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
                     }
                 }
 
-                // Clip picker
                 HStack(spacing: 10) {
                     Button("Choose Video Clip…") { pickClip() }
                         .buttonStyle(.bordered)
@@ -278,9 +322,8 @@ struct Step3RecordingView: View {
                     }
                 }
 
-                // Insertion position (only shown after clip is picked)
                 if clipURL != nil {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Picker("Insert clip at", selection: $clipPosition) {
                             ForEach(ClipPosition.allCases, id: \.self) { pos in
                                 Text(pos.rawValue).tag(pos)
@@ -289,10 +332,9 @@ struct Step3RecordingView: View {
                         .pickerStyle(.segmented)
 
                         if clipPosition == .current {
-                            HStack(spacing: 8) {
+                            HStack(spacing: 6) {
                                 Image(systemName: "arrow.up")
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
+                                    .foregroundStyle(.secondary).font(.caption)
                                 Text("Clip inserts at the scrubber position shown in the player above.")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
@@ -329,7 +371,8 @@ struct Step3RecordingView: View {
         guard let outputDir = state.outputDir else { return }
         let display = captureMode == .display ? capture.availableDisplays[safe: selectedDisplayIndex] : nil
         let window  = captureMode == .window  ? capture.availableWindows[safe: selectedWindowIndex]  : nil
-        let outputURL = outputDir.appendingPathComponent("screen_recording.\(settings.fileExtension)")
+
+        let outputURL = outputDir.appendingPathComponent("screen_recording.mov")
         state.recordingURL = outputURL
 
         capture.onRecordingStarted = {
@@ -338,12 +381,19 @@ struct Step3RecordingView: View {
         }
         capture.onRecordingFinished = {
             state.isRecording = false
-            state.recordingFinished = true
             timer?.invalidate()
+            if settings.videoContainer == .mp4 {
+                isTranscoding = true
+                Task { await transcodeToFinalFormat() }
+            } else {
+                state.recordingURL = capture.recordedFileURL ?? state.recordingURL
+                state.recordingFinished = true
+            }
         }
         capture.onError = { msg in
             errorMessage = msg
             state.isRecording = false
+            isTranscoding = false
             timer?.invalidate()
         }
 
@@ -362,12 +412,31 @@ struct Step3RecordingView: View {
         }
     }
 
+    private func transcodeToFinalFormat() async {
+        guard let movURL = capture.recordedFileURL else {
+            state.recordingFinished = true
+            isTranscoding = false
+            return
+        }
+        do {
+            let finalURL = try await merger.transcode(movURL: movURL, settings: settings)
+            state.recordingURL = finalURL
+        } catch {
+            state.recordingURL = movURL
+            errorMessage = "Compression failed — keeping original MOV recording."
+        }
+        isTranscoding = false
+        state.recordingFinished = true
+    }
+
     private func startTimer() {
         state.elapsedSeconds = 0
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            state.elapsedSeconds += 1
-            if state.elapsedSeconds >= 180 {
-                Task { await self.stopRecording() }
+            MainActor.assumeIsolated {
+                state.elapsedSeconds += 1
+                if state.elapsedSeconds >= 180 {
+                    Task { await stopRecording() }
+                }
             }
         }
     }
@@ -389,7 +458,6 @@ struct Step3RecordingView: View {
         errorMessage = nil
         mergeSuccess = false
 
-        // Pause the player so the file isn't locked during merge
         recordingPlayer?.pause()
 
         let position: InsertPosition
@@ -397,7 +465,6 @@ struct Step3RecordingView: View {
         case .start:   position = .start
         case .end:     position = .end
         case .current:
-            // Read the current scrubber position from the AVPlayer
             let seconds = recordingPlayer?.currentTime().seconds ?? 0
             position = .timestamp(seconds.isNaN || seconds < 0 ? 0 : seconds)
         }
@@ -405,7 +472,6 @@ struct Step3RecordingView: View {
         do {
             try await merger.merge(mainURL: recording, clipURL: clip, position: position)
             mergeSuccess = true
-            // Reload the player with the merged file
             recordingPlayer = AVPlayer(url: recording)
         } catch {
             errorMessage = "Merge failed: \(error.localizedDescription)"

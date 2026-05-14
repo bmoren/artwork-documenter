@@ -54,8 +54,12 @@ final class VideoMergeManager {
             )
         }
 
+        // Match the output container to the main file so the merged file keeps
+        // the same format (MOV during capture, MP4 after transcode).
+        let ext      = mainURL.pathExtension.lowercased()
+        let fileType: AVFileType = ext == "mp4" ? .mp4 : .mov
         let mergedURL = mainURL.deletingLastPathComponent()
-            .appendingPathComponent("screen_recording_merged.mov")
+            .appendingPathComponent("screen_recording_merged.\(ext)")
 
         guard let session = AVAssetExportSession(
             asset: composition,
@@ -66,25 +70,30 @@ final class VideoMergeManager {
             try FileManager.default.removeItem(at: mergedURL)
         }
 
-        session.outputURL = mergedURL
-        session.outputFileType = .mov
-
-        // Bridge the callback-based export into async/await
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            session.exportAsynchronously {
-                switch session.status {
-                case .completed:
-                    continuation.resume()
-                case .failed:
-                    continuation.resume(throwing: session.error ?? MergeError.exportFailed)
-                default:
-                    continuation.resume(throwing: MergeError.exportFailed)
-                }
-            }
-        }
+        try await session.export(to: mergedURL, as: fileType)
 
         try FileManager.default.removeItem(at: mainURL)
         try FileManager.default.moveItem(at: mergedURL, to: mainURL)
+    }
+
+    /// Transcode a MOV capture to the user's preferred format and resolution.
+    /// Deletes the source MOV on success and returns the new file URL.
+    func transcode(movURL: URL, settings: ExportSettings) async throws -> URL {
+        let outputURL = movURL.deletingPathExtension()
+            .appendingPathExtension(settings.fileExtension)
+
+        let asset = AVURLAsset(url: movURL)
+        guard let session = AVAssetExportSession(asset: asset, presetName: settings.exportPreset)
+        else { throw MergeError.exportSessionFailed }
+
+        if FileManager.default.fileExists(atPath: outputURL.path) {
+            try FileManager.default.removeItem(at: outputURL)
+        }
+
+        try await session.export(to: outputURL, as: settings.avFileType)
+        try? FileManager.default.removeItem(at: movURL)
+
+        return outputURL
     }
 
     enum MergeError: LocalizedError {

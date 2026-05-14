@@ -59,6 +59,23 @@ final class ExportSettings {
     var fileExtension: String  { videoContainer.fileExtension }
     var frameTimescale: Int32  { videoFrameRate.timescale }
 
+    /// AVAssetExportSession preset that matches the chosen codec and resolution.
+    var exportPreset: String {
+        switch videoCodec {
+        case .h264:
+            switch videoResolution {
+            case .p720:           return AVAssetExportPreset1280x720
+            case .p1080, .p1440: return AVAssetExportPreset1920x1080
+            case .native:         return AVAssetExportPresetHighestQuality
+            }
+        case .hevc:
+            switch videoResolution {
+            case .p720, .p1080: return AVAssetExportPresetHEVC1920x1080
+            case .p1440, .native: return AVAssetExportPresetHEVCHighestQuality
+            }
+        }
+    }
+
     // MARK: - Enums
 
     enum VideoCodec: String, CaseIterable {

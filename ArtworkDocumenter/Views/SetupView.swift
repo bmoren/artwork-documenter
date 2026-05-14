@@ -190,9 +190,11 @@ struct SetupView: View {
     private func startPolling() {
         pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { _ in
-            if CGPreflightScreenCaptureAccess() {
-                pollTimer?.invalidate()
-                status = .granted
+            MainActor.assumeIsolated {
+                if CGPreflightScreenCaptureAccess() {
+                    pollTimer?.invalidate()
+                    status = .granted
+                }
             }
         }
     }
