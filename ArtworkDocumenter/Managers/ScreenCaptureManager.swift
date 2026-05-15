@@ -2,6 +2,7 @@ import Foundation
 import ScreenCaptureKit
 import AVFoundation
 import CoreGraphics
+import CoreMedia
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -58,8 +59,14 @@ final class ScreenCaptureManager: NSObject {
             let (w, h) = pixelSize(for: d)
             config.width  = w
             config.height = h
+            config.scalesToFit = true
+        } else if let w = window {
+            // Set pixel dimensions from the window frame so the capture is
+            // cropped to the window bounds without shadow padding.
+            let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+            config.width  = evenPixels(w.frame.width  * scale)
+            config.height = evenPixels(w.frame.height * scale)
         }
-        config.scalesToFit = true
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
 
@@ -80,6 +87,20 @@ final class ScreenCaptureManager: NSObject {
         streamConfig.capturesAudio = true
         streamConfig.sampleRate    = 48000
         streamConfig.channelCount  = 2
+        streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: settings.frameTimescale)
+
+        // Pin stream dimensions so SCKit doesn't default to an arbitrary size.
+        // Window: use window's pixel bounds to avoid black padding.
+        // Display: scale to the target resolution (native = full pixel size).
+        if let w = window {
+            let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+            streamConfig.width  = evenPixels(w.frame.width  * scale)
+            streamConfig.height = evenPixels(w.frame.height * scale)
+        } else if let d = display {
+            let (w, h) = targetSize(for: d, resolution: settings.videoResolution)
+            streamConfig.width  = w
+            streamConfig.height = h
+        }
 
         let movURL = outputURL.deletingPathExtension().appendingPathExtension("mov")
         if FileManager.default.fileExists(atPath: movURL.path) {
@@ -133,7 +154,13 @@ final class ScreenCaptureManager: NSObject {
         onRecordingFinished?()
     }
 
-    // MARK: - Dimension helpers (screenshots only)
+    // MARK: - Dimension helpers
+
+    // Video encoders require even dimensions; round up by 1 if odd.
+    private func evenPixels(_ value: Double) -> Int {
+        let n = Int(value)
+        return n % 2 == 0 ? n : n + 1
+    }
 
     private func pixelSize(for display: SCDisplay) -> (Int, Int) {
         if let mode = CGDisplayCopyDisplayMode(display.displayID) {
@@ -142,6 +169,23 @@ final class ScreenCaptureManager: NSObject {
             if w > 0 && h > 0 { return (w, h) }
         }
         return (display.width * 2, display.height * 2)
+    }
+
+    // Returns the pixel dimensions the stream should capture at for a display,
+    // capped to the target resolution while preserving the display's aspect ratio.
+    // For .native, returns the display's full pixel size.
+    private func targetSize(for display: SCDisplay,
+                            resolution: ExportSettings.VideoResolution) -> (Int, Int) {
+        let (nW, nH) = pixelSize(for: display)
+        guard resolution != .native else { return (nW, nH) }
+        let targetH: Double
+        switch resolution {
+        case .p1080:  targetH = 1080
+        case .native: targetH = Double(nH) // unreachable
+        }
+        guard Double(nH) > targetH else { return (nW, nH) } // already at or below target
+        let scale = targetH / Double(nH)
+        return (evenPixels(Double(nW) * scale), evenPixels(targetH))
     }
 
     // MARK: - Filter

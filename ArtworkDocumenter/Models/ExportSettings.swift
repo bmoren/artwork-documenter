@@ -47,14 +47,13 @@ final class ExportSettings {
         switch videoCodec {
         case .h264:
             switch videoResolution {
-            case .p720:           return AVAssetExportPreset1280x720
-            case .p1080, .p1440: return AVAssetExportPreset1920x1080
-            case .native:         return AVAssetExportPresetHighestQuality
+            case .p1080:  return AVAssetExportPreset1920x1080
+            case .native: return AVAssetExportPresetHighestQuality
             }
         case .hevc:
             switch videoResolution {
-            case .p720, .p1080: return AVAssetExportPresetHEVC1920x1080
-            case .p1440, .native: return AVAssetExportPresetHEVCHighestQuality
+            case .p1080:  return AVAssetExportPresetHEVC1920x1080
+            case .native: return AVAssetExportPresetHEVCHighestQuality
             }
         }
     }
@@ -74,16 +73,12 @@ final class ExportSettings {
     }
 
     enum VideoResolution: String, CaseIterable {
-        case p720   = "720p"
         case p1080  = "1080p"
-        case p1440  = "1440p"
         case native = "Native"
 
         var label: String {
             switch self {
-            case .p720:   return "720p (HD)"
             case .p1080:  return "1080p (Full HD)"
-            case .p1440:  return "1440p (QHD)"
             case .native: return "Native"
             }
         }

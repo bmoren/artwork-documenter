@@ -37,6 +37,8 @@ struct Step3RecordingView: View {
     }
 
     var body: some View {
+        @Bindable var settings = settings
+
         VStack(spacing: 0) {
 
             // Header — hidden on done screen to reclaim space for the player
@@ -63,7 +65,7 @@ struct Step3RecordingView: View {
                 } else if state.isRecording {
                     activeRecordingSection
                 } else {
-                    setupSection
+                    setupSection(settings: $settings)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -92,77 +94,136 @@ struct Step3RecordingView: View {
             .padding(32)
         }
         .task { await capture.loadAvailableContent() }
+        .onAppear {
+            if state.recordingFinished, let url = state.recordingURL, recordingPlayer == nil {
+                recordingPlayer = makePlayer(url: url)
+            }
+        }
         .onDisappear { timer?.invalidate() }
         .onChange(of: state.recordingFinished) { _, finished in
             if finished, let url = state.recordingURL {
-                recordingPlayer = AVPlayer(url: url)
+                recordingPlayer = makePlayer(url: url)
             }
         }
     }
 
     // MARK: - Setup
 
-    private var setupSection: some View {
-        VStack {
-            Spacer()
-            GroupBox {
-                VStack(alignment: .leading, spacing: 16) {
-                    Picker("Source", selection: $captureMode) {
-                        Text("Full Display").tag(CaptureSource.display)
-                        Text("Specific Window").tag(CaptureSource.window)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+    private func setupSection(settings: Bindable<ExportSettings>) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 16) {
 
-                    if captureMode == .display, capture.availableDisplays.count > 1 {
-                        Picker("Display", selection: $selectedDisplayIndex) {
-                            ForEach(capture.availableDisplays.indices, id: \.self) { i in
-                                Text("Display \(i + 1)").tag(i)
-                            }
+                // Source picker
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Picker("Source", selection: $captureMode) {
+                            Text("Full Display").tag(CaptureSource.display)
+                            Text("Specific Window").tag(CaptureSource.window)
                         }
-                    }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
 
-                    if captureMode == .window {
-                        if capture.availableWindows.isEmpty {
-                            Text("No windows found. Open the app you want to record first.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        } else {
-                            Picker("Window", selection: $selectedWindowIndex) {
-                                ForEach(capture.availableWindows.indices, id: \.self) { i in
-                                    let w = capture.availableWindows[i]
-                                    Text("\(w.owningApplication?.applicationName ?? "App")  —  \(w.title ?? "Window")")
-                                        .tag(i)
+                        if captureMode == .display, capture.availableDisplays.count > 1 {
+                            Picker("Display", selection: $selectedDisplayIndex) {
+                                ForEach(capture.availableDisplays.indices, id: \.self) { i in
+                                    Text("Display \(i + 1)").tag(i)
                                 }
                             }
                         }
-                    }
 
-                    Button {
-                        Task { await startRecording() }
-                    } label: {
-                        Label("Start Recording", systemImage: "record.circle.fill")
-                            .frame(maxWidth: .infinity).padding(.vertical, 4)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .controlSize(.large)
-                    .disabled(!capture.permissionGranted)
-
-                    if capture.permissionDenied {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "exclamationmark.shield").foregroundStyle(.orange)
-                            Text("Screen Recording was denied. Enable ArtworkDocumenter in System Settings → Privacy & Security → Screen Recording, then relaunch.")
-                                .font(.caption).foregroundStyle(.orange)
+                        if captureMode == .window {
+                            if capture.availableWindows.isEmpty {
+                                Text("No windows found. Open the app you want to record first.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Picker("Window", selection: $selectedWindowIndex) {
+                                    ForEach(capture.availableWindows.indices, id: \.self) { i in
+                                        let w = capture.availableWindows[i]
+                                        Text("\(w.owningApplication?.applicationName ?? "App")  —  \(w.title ?? "Window")")
+                                            .tag(i)
+                                    }
+                                }
+                            }
                         }
-                        .padding(10)
-                        .background(Color.orange.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        Button {
+                            Task { await startRecording() }
+                        } label: {
+                            Label("Start Recording", systemImage: "record.circle.fill")
+                                .frame(maxWidth: .infinity).padding(.vertical, 4)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .controlSize(.large)
+                        .disabled(!capture.permissionGranted)
+
+                        if capture.permissionDenied {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "exclamationmark.shield").foregroundStyle(.orange)
+                                Text("Screen Recording was denied. Enable ArtworkDocumenter in System Settings → Privacy & Security → Screen Recording, then relaunch.")
+                                    .font(.caption).foregroundStyle(.orange)
+                            }
+                            .padding(10)
+                            .background(Color.orange.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
                     }
+                } label: {
+                    Label("Recording Source", systemImage: "display").font(.headline)
                 }
-            } label: {
-                Label("Recording Source", systemImage: "display").font(.headline)
+
+                // Video settings
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 14) {
+                        settingsRow(label: "Codec") {
+                            Picker("Codec", selection: settings.videoCodec) {
+                                ForEach(ExportSettings.VideoCodec.allCases, id: \.self) {
+                                    Text($0.rawValue).tag($0)
+                                }
+                            }
+                            .pickerStyle(.segmented).labelsHidden()
+                        }
+                        settingsRow(label: "Resolution") {
+                            Picker("Resolution", selection: settings.videoResolution) {
+                                ForEach(ExportSettings.VideoResolution.allCases, id: \.self) {
+                                    Text($0.rawValue).tag($0)
+                                }
+                            }
+                            .pickerStyle(.segmented).labelsHidden()
+                        }
+                        settingsRow(label: "Frame Rate") {
+                            Picker("Frame Rate", selection: settings.videoFrameRate) {
+                                ForEach(ExportSettings.FrameRate.allCases, id: \.self) {
+                                    Text($0.rawValue).tag($0)
+                                }
+                            }
+                            .pickerStyle(.segmented).labelsHidden()
+                        }
+                        HStack(spacing: 6) {
+                            Image(systemName: "info.circle").foregroundStyle(.secondary)
+                            Text("H.265 produces smaller files. Resolution applies during export.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .opacity(settings.videoCodec.wrappedValue == .hevc ? 1 : 0)
+                    }
+                } label: {
+                    Label("Video Settings", systemImage: "slider.horizontal.3").font(.headline)
+                }
             }
-            Spacer()
+        }
+    }
+
+    // MARK: - Settings row helper
+
+    @ViewBuilder
+    private func settingsRow<Content: View>(label: String,
+                                            @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .center) {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 80, alignment: .leading)
+            content()
         }
     }
 
@@ -297,68 +358,86 @@ struct Step3RecordingView: View {
 
     private var clipInsertionSection: some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("You can insert an existing video clip into your recording.")
-                    .font(.caption).foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 16) {
 
-                if let player = recordingPlayer {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Your Recording")
-                            .font(.caption.bold())
+                // Left: video player
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Your Recording")
+                        .font(.caption.bold())
+                    if let player = recordingPlayer {
                         VideoPlayerView(player: player)
                             .frame(minHeight: 140, maxHeight: .infinity)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
+                    } else {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.secondary.opacity(0.08))
+                            .frame(minHeight: 140, maxHeight: .infinity)
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                HStack(spacing: 10) {
-                    Button("Choose Video Clip…") { pickClip() }
-                        .buttonStyle(.bordered)
-                    if let url = clipURL {
-                        Label(url.lastPathComponent, systemImage: "film")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .lineLimit(1).truncationMode(.middle)
+                // Right: controls
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("You can insert an existing video clip into your recording.")
+                        .font(.caption).foregroundStyle(.secondary)
+
+                    HStack(spacing: 10) {
+                        Button("Choose Video Clip…") { pickClip() }
+                            .buttonStyle(.bordered)
+                        if let url = clipURL {
+                            Label(url.lastPathComponent, systemImage: "film")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .lineLimit(1).truncationMode(.middle)
+                        }
                     }
-                }
 
-                if clipURL != nil {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Picker("Insert clip at", selection: $clipPosition) {
-                            ForEach(ClipPosition.allCases, id: \.self) { pos in
-                                Text(pos.rawValue).tag(pos)
+                    if clipURL != nil {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Picker("Insert clip at", selection: $clipPosition) {
+                                ForEach(ClipPosition.allCases, id: \.self) { pos in
+                                    Text(pos.rawValue).tag(pos)
+                                }
                             }
-                        }
-                        .pickerStyle(.segmented)
+                            .pickerStyle(.radioGroup)
 
-                        if clipPosition == .current {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.up")
-                                    .foregroundStyle(.secondary).font(.caption)
-                                Text("Clip inserts at the scrubber position shown in the player above.")
-                                    .font(.caption).foregroundStyle(.secondary)
+                            if clipPosition == .current {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.up")
+                                        .foregroundStyle(.secondary).font(.caption)
+                                    Text("Clip inserts at the scrubber position shown in the player.")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
                             }
-                        }
 
-                        if mergeSuccess {
-                            Label("Clip merged successfully!", systemImage: "checkmark.circle.fill")
-                                .font(.caption).foregroundStyle(.green)
-                        }
+                            if mergeSuccess {
+                                Label("Clip merged successfully!", systemImage: "checkmark.circle.fill")
+                                    .font(.caption).foregroundStyle(.green)
+                            }
 
-                        Button {
-                            Task { await mergeClip() }
-                        } label: {
                             if merger.isMerging {
-                                Label("Merging…", systemImage: "arrow.triangle.merge")
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ProgressView(value: merger.mergeProgress)
+                                        .progressViewStyle(.linear)
+                                    Text("Merging… \(Int(merger.mergeProgress * 100))%")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
                             } else {
-                                Label("Merge into Recording", systemImage: "arrow.triangle.merge")
+                                Button {
+                                    Task { await mergeClip() }
+                                } label: {
+                                    Label("Merge into Recording", systemImage: "arrow.triangle.merge")
+                                }
+                                .buttonStyle(.bordered)
                             }
                         }
-                        .buttonStyle(.bordered)
-                        .disabled(merger.isMerging)
                     }
+
+                    Spacer(minLength: 0)
                 }
+                .frame(width: 240)
             }
+            .frame(maxHeight: .infinity)
         } label: {
             Label("Insert Video Clip (Optional)", systemImage: "film.stack").font(.headline)
         }
@@ -436,6 +515,18 @@ struct Step3RecordingView: View {
         }
     }
 
+    private func makePlayer(url: URL) -> AVPlayer {
+        let player = AVPlayer(url: url)
+        // Seek back to zero when the video finishes so currentTime() never
+        // sits at the duration (which would make "Current Position" insert at end).
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { _ in player.seek(to: .zero) }
+        return player
+    }
+
     private func pickClip() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.movie, .mpeg4Movie, .quickTimeMovie, .video]
@@ -467,7 +558,7 @@ struct Step3RecordingView: View {
         do {
             try await merger.merge(mainURL: recording, clipURL: clip, position: position, settings: settings)
             mergeSuccess = true
-            recordingPlayer = AVPlayer(url: recording)
+            recordingPlayer = makePlayer(url: recording)
         } catch {
             errorMessage = "Merge failed: \(error.localizedDescription)"
         }
