@@ -9,6 +9,7 @@ final class ProjectState {
     var technical: String = ""
     var url: String = ""
     var outputDir: URL? = nil
+    var saveLocation: URL? = nil
 
     var screenshots: [URL] = []
 
@@ -33,6 +34,7 @@ final class ProjectState {
         technical = ""
         url = ""
         outputDir = nil
+        saveLocation = nil
         screenshots = []
         recordingURL = nil
         isRecording = false

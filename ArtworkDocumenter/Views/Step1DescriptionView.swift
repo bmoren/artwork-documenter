@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct Step1DescriptionView: View {
     @Environment(ProjectState.self) private var state
@@ -9,6 +10,24 @@ struct Step1DescriptionView: View {
         @Bindable var state = state
 
         VStack(alignment: .leading, spacing: 16) {
+
+            // Save location picker
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Save Location").font(.headline)
+                    Text(saveLocationDisplay)
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer()
+                Button("Choose Folder…") { chooseSaveLocation() }
+                    .buttonStyle(.bordered)
+            }
+            .padding(14)
+            .background(Color.secondary.opacity(0.07))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
 
             // Title + URL — styled differently from the multiline editors below
             HStack(alignment: .top, spacing: 16) {
@@ -72,6 +91,27 @@ struct Step1DescriptionView: View {
         }
     }
 
+    // MARK: - Save location
+
+    private var saveLocationDisplay: String {
+        if let loc = state.saveLocation {
+            return loc.path(percentEncoded: false)
+        }
+        return "~/Desktop (default)"
+    }
+
+    private func chooseSaveLocation() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        panel.message = "Select the folder where the project folder will be created"
+        if panel.runModal() == .OK, let url = panel.url {
+            state.saveLocation = url
+        }
+    }
+
     // MARK: - Save
 
     private func saveAndContinue() {
@@ -80,9 +120,9 @@ struct Step1DescriptionView: View {
                 .replacingOccurrences(of: "[^a-zA-Z0-9 \\-_]", with: "", options: .regularExpression)
                 .trimmingCharacters(in: .whitespaces)
             let folderName = safe.isEmpty ? "Untitled Documentation" : "\(safe) Documentation"
-            let dir = FileManager.default.homeDirectoryForCurrentUser
+            let base = state.saveLocation ?? FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Desktop")
-                .appendingPathComponent(folderName)
+            let dir = base.appendingPathComponent(folderName)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             state.outputDir = dir
 
